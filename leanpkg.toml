@@ -1,0 +1,6 @@
+[package]
+name = "ai"
+version = "0.1"
+
+[dependencies]
+library_dev = {git = "https://github.com/leanprover/library_dev.git", rev = "2694cabf2edfbf0c4cd4560f014dbe26dcd3fdf1"}
