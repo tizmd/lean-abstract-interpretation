@@ -8,36 +8,6 @@ set_option eqn_compiler.zeta true
 
 variables {α : Type u} {β : Type v}{γ : Type w}
 
-def is_directed [weak_order α] (s : set α) := ∀ a b ∈ s, ∃ c, c ∈ s ∧ a ≤ c ∧ b ≤ c 
-def is_chain [weak_order α] (s : set α)  := ∀ a b ∈ s, a ≤ b ∨ b ≤ a 
-
-def chain [weak_order α] := {s : set α // is_chain s}
-
-def iter_n (f : α → α) : ℕ → α → α 
-| 0      z := z 
-| (n+1)  z := iter_n n (f z)
-
-namespace iter_n 
-variables [weak_order α] {f : α → α}
-
-protected
-lemma iter_eq (f : α → α) : Π {n} {z}, iter_n f (n+1) z = f (iter_n f n z) 
-| 0 _ := rfl 
-| (n+1) z := @iter_eq n _ 
-
-
-lemma increasing_singlestep (z : α) : monotone f → z ≤ f z → ∀ {{n : ℕ}}, iter_n f n z ≤ iter_n f (n+1) z := 
-  begin
-    intros hmono hini n,
-    revert z,
-    induction n with n iH,
-     intros z hini, assumption,
-     intros z hini,
-       apply iH,
-       apply hmono,
-       assumption
-  end     
-
 private lemma exists_add_of_le : ∀ {m n : ℕ}, m ≤ n → ∃ k, n = m + k := 
   begin
    intros m n hle,
@@ -46,71 +16,53 @@ private lemma exists_add_of_le : ∀ {m n : ℕ}, m ≤ n → ∃ k, n = m + k :
    assumption
   end
 
-lemma increasing_of_le (z : α) : monotone f → z ≤ f z → ∀ {{m n}}, m ≤ n → iter_n f m z ≤ iter_n f n z := 
-  begin intros hmono hini m n hle,
-  revert z, 
-  cases exists_add_of_le hle with k hk, 
-  rw hk,
-  clear hk,
-  intros z hini,
-  induction k with k iH,
-   refl,
-   transitivity,
-   apply iH, 
-   rw nat.add_succ, apply increasing_singlestep,
-   repeat {assumption}
-  end
+def is_directed [weak_order α] (s : set α) := ∀ a b ∈ s, ∃ c, c ∈ s ∧ a ≤ c ∧ b ≤ c 
+def is_chain [weak_order α] (s : set α)  := ∀ a b ∈ s, a ≤ b ∨ b ≤ a 
 
-  lemma decreasing_singlestep (z : α) : monotone f → f z ≤ z → ∀ {{n : ℕ}}, iter_n f (n + 1) z ≤ iter_n f n z := 
-    begin 
+def chain [weak_order α] := {s : set α // is_chain s}
+
+def ascending_chain α [weak_order α] := { f : ℕ → α //  ∀ n, f n ≤ f (n + 1) }
+
+namespace ascending_chain
+variables [weak_order α] 
+
+protected
+def mem (a : α)(f : ascending_chain α) : Prop := ∃ n : ℕ, a = f.1 n
+instance : has_mem α (ascending_chain α) := ⟨ ascending_chain.mem ⟩  
+
+def monotone (f : ascending_chain α) {m n} : m ≤ n → f.1 m ≤ f.1 n :=     
+begin 
+intro hle,
+cases (exists_add_of_le hle) with k hk,
+rw hk,
+clear hk,
+induction k with k iH,
+refl,
+transitivity f.1 (m + k),
+assumption,
+rw nat.add_succ,
+apply f.property
+end
+end ascending_chain
+
+def iter_n (f : α → α) (z : α) : ℕ → α 
+|  0 := z 
+|  (n + 1) := f $ iter_n n
+
+namespace iter_n 
+variables [weak_order α] {f : α → α}
+
+lemma increasing_singlestep {z : α} : monotone f → z ≤ f z → ∀ {{n : ℕ}}, iter_n f z n ≤ iter_n f z (n+1) := 
+  begin
     intros hmono hini n,
-    revert z,
     induction n with n iH,
-     intros z hini, assumption,
-     intros z hini,
-       apply iH,
-       apply hmono,
-       assumption
-    end
+     assumption,
+     apply hmono, assumption
+  end     
 
-lemma decreasing_of_ge (z : α) : monotone f → f z ≤ z → ∀ {{m n}}, m ≥ n → iter_n f m z ≤ iter_n f n z := 
-  begin intros hmono hini m n hle,
-  revert z, 
-  cases exists_add_of_le hle with k hk, 
-  rw hk,
-  clear hk,
-  intros z hini,
-  induction k with k iH,
-   refl,
-   transitivity iter_n f (n+k) z,
-   rw nat.add_succ, apply decreasing_singlestep, repeat {assumption},
-  end
-
+def to_ascending_chain {f} {z} : monotone f → z ≤ f z → ascending_chain α := 
+  assume hmono hini, ⟨iter_n f z, take n, begin apply increasing_singlestep, repeat {assumption} end⟩ 
 end iter_n
-
-def iter_set (f : α → α) (z : α) := {x : α | ∃ n : ℕ, x = iter_n f n z} 
-
-lemma increasing_monotonic_iter_chain [weak_order α] {f : α → α} (z : α) : monotone f → z ≤ f z → is_chain (iter_set f z) := 
-  assume hmono hle, 
-    take x y ⟨m, hm⟩ ⟨n, hn⟩, 
-    begin 
-    rw hm,
-    rw hn,
-    cases (le_total m n) with hmn hnm,
-    left, apply iter_n.increasing_of_le, repeat {assumption},
-    right, apply iter_n.increasing_of_le, repeat {assumption}
-    end
-
-lemma decreasing_monotonic_iter_chain [weak_order α] {f : α → α} (z : α) : monotone f → f z ≤ z → is_chain (iter_set f z) := 
-  assume hmono hle, 
-    take x y ⟨m, hm⟩ ⟨n, hn⟩, 
-    begin 
-    rw hm,
-    rw hn,
-    cases (le_total m n) with hmn hnm,
-    right, apply iter_n.decreasing_of_ge, repeat {assumption},
-    left , apply iter_n.decreasing_of_ge, repeat {assumption}
-    end
 
 namespace is_directed 
 
@@ -131,6 +83,16 @@ lemma of_is_chain [weak_order α] { s : set α } : is_chain s → is_directed s 
       (assume hxy, ⟨_, hy, hxy, by refl⟩) 
       (assume hyx, ⟨_, hx, by refl, hyx⟩) 
 
+lemma of_ascending_chain [weak_order α](f : ascending_chain α) : is_directed { a : α | a ∈ f } := 
+  take x y, assume ⟨m, hm⟩ ⟨n, hn⟩,  
+    eq.rec_on hm.symm 
+    (eq.rec_on hn.symm 
+      (match le_total m n with 
+       | or.inl hmn := ⟨f.1 n, ⟨_, rfl⟩, f.monotone hmn , by refl⟩  
+       | or.inr hnm := ⟨f.1 m, ⟨_, rfl⟩, by refl , f.monotone hnm⟩  
+       end
+      )
+    )
 
 end is_directed
 
@@ -306,7 +268,6 @@ def comp : scott_continuous β γ → scott_continuous α β → scott_continuou
 protected
 def monotone (f : scott_continuous α β) : monotone f.1 := f.2.monotone 
 
-instance : has_coe (scott_continuous α β) (α → β) := ⟨ λ f, f.1 ⟩ 
 
 protected 
 def le (f g : scott_continuous α β) : Prop := ∀ a , f.1 a ≤ g.1 a  
@@ -459,6 +420,9 @@ lemma dSup_le (fs : directed (scott_continuous α β)) (f : scott_continuous α 
 
 end scott_continuous
 
+instance scott_continuous_function [directed_complete_partial_order α][directed_complete_partial_order β] : 
+         has_coe (scott_continuous α β) (α → β) := ⟨ λ f, f.1 ⟩ 
+
 instance scott_continuous_dcpo [directed_complete_partial_order α][directed_complete_partial_order β] 
  : directed_complete_partial_order (scott_continuous α β) := 
  {
@@ -470,15 +434,70 @@ instance scott_continuous_dcpo [directed_complete_partial_order α][directed_com
 
  -- fixedpoints
 section 
-variables [directed_complete_partial_order α]
+variables [directed_complete_partial_order α] [directed_complete_partial_order β]
 
-def fixed_points (f : scott_continuous α α) : set α := { x | x = f.1 x }
+lemma monotone_preserve_directed {f : α → β} : monotone f → ∀ s : directed α, is_directed (set.image f s.1) :=
+begin 
+intros hmono s b₁ b₂ hb₁ hb₂,  
+cases hb₁ with a₁ ha₁,
+cases ha₁ with ha₁ eqb₁,
+cases hb₂ with a₂  ha₂,
+cases ha₂ with ha₂ eqb₂,
+rw [-eqb₁, -eqb₂],
+cases s.property _ _ ha₁ ha₂ with a ha,
+cases ha with ha h,
+cases h with ha₁a ha₂a,
+exact ⟨_, ⟨_, ha, rfl⟩, hmono ha₁a, hmono ha₂a⟩   
+end   
+
+def directed.map {f : α → β} : monotone f → directed α → directed β := assume hmono, take s, ⟨_, monotone_preserve_directed hmono s⟩   
+
+lemma monotone_dSup {f : α → β} (hmono : monotone f) : ∀ {{s : directed α}}, dSup (directed.map hmono s) ≤ f (dSup s)
+:= 
+begin 
+intro s,
+apply dSup_le,
+intros b hb,
+cases hb with a ha,
+cases ha with ha eqa,
+rw -eqa,
+apply hmono,
+apply le_dSup,
+assumption
+end  
+
+def monotone_ascending_chain {f : α → α} : monotone f → directed α := assume hmono,
+    ⟨_, is_directed.of_ascending_chain (iter_n.to_ascending_chain hmono bot_le)⟩   
+def monotone_lfp {f : α → α} : monotone f → α :=  assume hmono, dSup (monotone_ascending_chain hmono)
+
+lemma monotone_lfp_le {f : α → α} (hmono : monotone f) : monotone_lfp hmono ≤ f (monotone_lfp hmono) :=
+ begin
+   apply dSup_le,
+   intros b hb,
+   cases hb with n hn,
+   rw hn,
+   cases n with n,
+   apply bot_le,
+   apply hmono,
+   apply le_dSup,
+   exact ⟨_, rfl⟩  
+ end
+
+lemma monotone_le_lfp {f : α → α} (hmono : monotone f) : f (monotone_lfp hmono) ≤ monotone_lfp hmono :=  
+have ∀ n, iter_n f ⊥ (n + 1) ≤ f (monotone_lfp hmono), 
+   from take n, 
+   begin 
+   apply hmono,
+   apply le_dSup,
+   exact ⟨_, rfl⟩ 
+   end, 
+begin
+      
+end
+def fixed_point (f : α → α) : set α := { x | x = f x }
 
 def lfp (f : scott_continuous α α) : α := 
-  dSup ⟨_, is_directed.of_is_chain (increasing_monotonic_iter_chain _ f.monotone bot_le)⟩   
-
-def gfp (f : scott_continuous α α) : α :=
-  dSup ⟨_, is_directed.of_is_chain (decreasing_monotonic_iter_chain _ f.monotone le_top)⟩   
+  dSup ⟨_, is_directed.of_ascending_chain (iter_n.to_ascending_chain f.monotone bot_le)⟩   
 
 
 variable {f : scott_continuous α α}
@@ -493,11 +512,9 @@ lemma lfp_eq : lfp f = f.1 (lfp f) :=
       cases ha with n hn,
       rw hn,
       apply le_dSup_of_le,
-      exact ⟨iter_n f.1 n ⊥, ⟨n, rfl⟩, rfl⟩, 
-      rw -(iter_n.iter_eq f.1),
-      apply iter_n.increasing_singlestep,
-      apply f.monotone,
-      apply bot_le
+      exact ⟨iter_n f.1 ⊥ n, ⟨_, rfl⟩ , rfl⟩,
+      change iter_n f.1 ⊥ n ≤ iter_n f.1 ⊥ (n+1),
+      apply iter_n.increasing_singlestep f.monotone bot_le,
     end
     begin
     unfold lfp,
@@ -509,20 +526,16 @@ lemma lfp_eq : lfp f = f.1 (lfp f) :=
     cases ha₁ with n hn,
     rw -eqa₁,
     rw hn,
-    rw -(iter_n.iter_eq f.1),
     apply le_dSup,
     exact ⟨n+1, rfl⟩ 
     end   
 
-lemma lfp_fixed_point : lfp f ∈ fixed_points f := lfp_eq 
+lemma lfp_fixed_point : lfp f ∈ fixed_point f.1 := lfp_eq 
 
-lemma lfp_le : ∀ x ∈ fixed_points f, lfp f ≤ x := 
+lemma lfp_le : ∀ x ∈ fixed_point f.1, lfp f ≤ x := 
   take x, assume xeq, dSup_le 
      (take a, assume ⟨n, hn⟩, eq.rec_on hn.symm 
-        (nat.rec_on n bot_le (λ n iH, eq.rec_on xeq.symm begin rw iter_n.iter_eq, apply f.monotone, assumption end) )) 
-
-
-
+        (nat.rec_on n bot_le (λ n iH, eq.rec_on xeq.symm (f.monotone iH)) )) 
 end
 
 
