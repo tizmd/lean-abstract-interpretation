@@ -1,4 +1,4 @@
-import algebra.lattice.basic algebra.lattice.bounded_lattice 
+import algebra.lattice.basic algebra.lattice.bounded_lattice algebra.lattice.complete_lattice
 import data.set 
 
 universes u v w
@@ -43,16 +43,20 @@ assumption,
 rw nat.add_succ,
 apply f.property
 end
+
+def is_stationary (f : ascending_chain α) : Prop := ∃ n, ∀ m, n ≤ m → f.1 n = f.1 m 
+
 end ascending_chain
 
 def iter_n (f : α → α) (z : α) : ℕ → α 
 |  0 := z 
 |  (n + 1) := f $ iter_n n
 
+
 namespace iter_n 
 variables [weak_order α] {f : α → α}
 
-lemma increasing_singlestep {z : α} : monotone f → z ≤ f z → ∀ {{n : ℕ}}, iter_n f z n ≤ iter_n f z (n+1) := 
+lemma single_step {z : α} : monotone f → z ≤ f z → ∀ {{n : ℕ}}, iter_n f z n ≤ iter_n f z (n+1) := 
   begin
     intros hmono hini n,
     induction n with n iH,
@@ -61,8 +65,42 @@ lemma increasing_singlestep {z : α} : monotone f → z ≤ f z → ∀ {{n : �
   end     
 
 def to_ascending_chain {f} {z} : monotone f → z ≤ f z → ascending_chain α := 
-  assume hmono hini, ⟨iter_n f z, take n, begin apply increasing_singlestep, repeat {assumption} end⟩ 
+  assume hmono hini, ⟨iter_n f z, take n, begin apply single_step, repeat {assumption} end⟩ 
+
+lemma upper_bound (a : α) {z} : monotone f → z ≤ a → f a ≤ a → ∀ {{n}}, iter_n f z n ≤ a := 
+assume hmono hini hle, 
+  take n,
+    nat.rec_on n hini (take n, assume iH, calc iter_n f z (n+1) = f (iter_n f z n) : by refl 
+                                                            ... ≤ f a              : hmono iH 
+                                                            ... ≤ a                : hle  
+                      )
+
 end iter_n
+
+def iter_n₁ (f : α → α) : ℕ → α → α 
+| 0 := id 
+| (n+1) := λ a, iter_n₁ n $ f a
+
+namespace iter_n₁ 
+variables {f : α → α}
+
+@[simp]
+lemma iter_eq : ∀ {n}{z}, iter_n₁ f (n+1) z = f (iter_n₁ f n z) 
+| 0 _ := rfl 
+| (n+1) z := calc iter_n₁ f (n + 2) z = iter_n₁ f (n + 1) (f z) : by refl 
+                                 ...  = f (iter_n₁ f n (f z))   : by rw iter_eq 
+                                 ...  = f (iter_n₁ f (n+1) z)   : by refl 
+
+lemma single_step [weak_order α] {z} (hmono : monotone f) (hini : z ≤ f z) : ∀ n, iter_n₁ f n z ≤ iter_n₁ f (n+1) z 
+| 0     := hini 
+| (n+1) := calc iter_n₁ f (n+1) z = f (iter_n₁ f n z)     : iter_eq 
+                            ...   ≤ f (iter_n₁ f (n+1) z) : hmono (single_step n) 
+                            ...   = iter_n₁ f (n+2) z     : iter_eq.symm 
+
+def to_ascending_chain [weak_order α] {z} : monotone f → z ≤ f z → ascending_chain α := 
+  assume hmono hini, ⟨_, single_step hmono hini⟩ 
+   
+end iter_n₁
 
 namespace is_directed 
 
@@ -93,6 +131,8 @@ lemma of_ascending_chain [weak_order α](f : ascending_chain α) : is_directed {
        end
       )
     )
+ lemma of_lower_set [weak_order α] (a : α) : is_directed ({ x | x ≤ a}) := 
+   take x y, assume hx hy, ⟨a, le_refl _, hx, hy⟩   
 
 end is_directed
 
@@ -102,7 +142,10 @@ instance [weak_order α] : has_mem α (directed α) := ⟨ λ a s, a ∈ s.1⟩
 instance [weak_order α] : has_emptyc (directed α) := ⟨ ⟨_, is_directed.empty⟩ ⟩  
 instance [weak_order α] : has_subset (directed α) := ⟨ λ s t, s.1 ⊆ t.1 ⟩ 
 
-class directed_complete_partial_order α extends  semilattice_sup α := 
+def directed.of_ascending_chain [weak_order α] : ascending_chain α → directed α := λ seq, ⟨_, is_directed.of_ascending_chain seq⟩  
+def directed.of_lower_set [weak_order α] : α → directed α := λ a, ⟨_, is_directed.of_lower_set a⟩  
+
+class directed_complete_partial_order α extends weak_order α := 
   (dSup : directed α → α)
   (le_dSup : ∀ s, ∀ a ∈ s, a ≤ dSup s)  
   (dSup_le : ∀ s a, (∀ b∈s, b ≤ a) → dSup s ≤ a)
@@ -127,24 +170,32 @@ def bot : α := dSup ∅
 lemma bot_le : bot ≤ a := 
   dSup_le _ _ (take b, false.elim) 
 
-def top : α := dSup ⟨_, is_directed.univ⟩ 
-lemma le_top : a ≤ top := le_dSup _ _ true.intro
   
 end directed_complete_partial_order
 
-instance directed_complete_partial_order_sup_bot [ ins : directed_complete_partial_order α] : semilattice_sup_bot α := 
+instance directed_complete_partial_order_bot [ ins : directed_complete_partial_order α] : order_bot α := 
 {
   ins with 
   bot := directed_complete_partial_order.bot,
   bot_le := @directed_complete_partial_order.bot_le _ _,
 }
 
-instance directed_complete_partial_order_sup_top [ ins : directed_complete_partial_order α] : semilattice_sup_top α := 
+class directed_complete_partial_order_sup α extends semilattice_sup α , directed_complete_partial_order α 
+
+instance directed_complete_partial_order_sup_top [ ins : directed_complete_partial_order_sup α] : semilattice_sup_top α := 
 {
   ins with 
-  top := directed_complete_partial_order.top,
-  le_top := @directed_complete_partial_order.le_top _ _,
+  top := dSup ⟨set.univ, take x y, assume hx hy, ⟨_ , true.intro, le_sup_left, le_sup_right⟩⟩,  
+  le_top := take _, le_dSup true.intro
 }
+
+instance complete_lattice_directed_complete_partial_order_sup [ins : complete_lattice α] : directed_complete_partial_order_sup α := 
+{
+    ins with 
+    dSup := λ s, Sup s.1,
+    le_dSup := λ s a, assume ha, le_Sup ha,
+    dSup_le := λ s a, assume h, Sup_le (take _ hb, h _ hb) 
+} 
 
 structure is_scott_continuous [directed_complete_partial_order α] [directed_complete_partial_order β] (f : α → β) : Prop := 
   (preserve_directed : ∀ s : directed α, is_directed (set.image f s.1))
@@ -252,6 +303,12 @@ lemma monotone : is_scott_continuous f → monotone f :=
             apply le_dSup,
             exact ⟨_, or.inr (or.inl rfl), rfl⟩ 
            end
+  private lemma set_image_empty {α}{β} {f : α → β} : set.image f ∅ = ∅ := 
+     set.ext (take x, ⟨ assume ⟨_, h, _⟩, h.elim, false.elim ⟩ )
+
+  lemma is_strict : is_scott_continuous f → f ⊥ = ⊥ := 
+    assume hcont, eq.trans (hcont.preserve_dSup ∅) (congr_arg dSup (subtype.eq set_image_empty))
+
 
 end is_scott_continuous
 
@@ -293,7 +350,7 @@ instance scott_continuous_weak_order : weak_order (scott_continuous α β) :=
     le_trans := scott_continuous.le_trans,
     le_antisymm := scott_continuous.le_antisymm
 }
-
+/-
 protected
 def sup (f g : scott_continuous α β) : scott_continuous α β := 
   let h := λ a, f.1 a ⊔ g.1 a in  
@@ -368,7 +425,7 @@ instance scott_continuous_semilattice_sup : semilattice_sup (scott_continuous α
     le_sup_right := scott_continuous.le_sup_right,
     sup_le := scott_continuous.sup_le
 } 
-
+-/
 def sapply (f : scott_continuous α β) (s : directed α) : directed β := ⟨_, f.2.preserve_directed s⟩ 
 
 protected
@@ -418,6 +475,9 @@ protected
 lemma dSup_le (fs : directed (scott_continuous α β)) (f : scott_continuous α β) : (∀ g ∈ fs, g ≤ f) → scott_continuous.dSup fs ≤ f := 
   assume h, take a, dSup_le (take b, assume ⟨g, hg, eqg⟩, eq.rec_on eqg.symm (h _ hg _)) 
 
+@[simp]
+lemma is_strict (f : scott_continuous α β) : f.1 ⊥ = ⊥ := f.property.is_strict
+
 end scott_continuous
 
 instance scott_continuous_function [directed_complete_partial_order α][directed_complete_partial_order β] : 
@@ -426,7 +486,7 @@ instance scott_continuous_function [directed_complete_partial_order α][directed
 instance scott_continuous_dcpo [directed_complete_partial_order α][directed_complete_partial_order β] 
  : directed_complete_partial_order (scott_continuous α β) := 
  {
-     scott_continuous.scott_continuous_semilattice_sup with
+     scott_continuous.scott_continuous_weak_order with
      dSup := scott_continuous.dSup,
      le_dSup := scott_continuous.le_dSup,
      dSup_le := scott_continuous.dSup_le
@@ -466,11 +526,23 @@ apply le_dSup,
 assumption
 end  
 
-def monotone_ascending_chain {f : α → α} : monotone f → directed α := assume hmono,
-    ⟨_, is_directed.of_ascending_chain (iter_n.to_ascending_chain hmono bot_le)⟩   
-def monotone_lfp {f : α → α} : monotone f → α :=  assume hmono, dSup (monotone_ascending_chain hmono)
+lemma ascending_chain_dSup {seq : ascending_chain α} : 
+  dSup (directed.of_ascending_chain seq) ∈ seq ↔ seq.is_stationary := 
+  ⟨ assume ⟨n, eqn⟩ , ⟨n, take m, assume hnm : n ≤ m, le_antisymm (seq.monotone hnm) (eq.rec_on eqn (le_dSup ⟨_, rfl⟩ ))⟩ ,
+    assume ⟨n, hn ⟩ , ⟨n, le_antisymm 
+                 (dSup_le (take b, assume ⟨m, hm⟩, eq.rec_on hm.symm (or.elim (le_total n m) 
+                     (assume h : n ≤ m, eq.rec_on (hn _ h) (le_refl _)) 
+                     (seq.monotone)))) 
+                 (le_dSup ⟨_, rfl⟩) ⟩ ⟩ 
+end
+namespace monotone
+variables [directed_complete_partial_order α] [directed_complete_partial_order β]
 
-lemma monotone_lfp_le {f : α → α} (hmono : monotone f) : monotone_lfp hmono ≤ f (monotone_lfp hmono) :=
+def ascending_chain {α} [order_bot α] {f : α → α} : monotone f → ascending_chain α := assume hmono, iter_n.to_ascending_chain hmono bot_le
+
+def lfp {f : α → α} : monotone f → α :=  assume hmono, dSup (directed.of_ascending_chain (ascending_chain hmono))
+
+lemma lfp_le {f : α → α} (hmono : monotone f) : hmono.lfp ≤ f hmono.lfp :=
  begin
    apply dSup_le,
    intros b hb,
@@ -483,59 +555,69 @@ lemma monotone_lfp_le {f : α → α} (hmono : monotone f) : monotone_lfp hmono 
    exact ⟨_, rfl⟩  
  end
 
-lemma monotone_le_lfp {f : α → α} (hmono : monotone f) : f (monotone_lfp hmono) ≤ monotone_lfp hmono :=  
-have ∀ n, iter_n f ⊥ (n + 1) ≤ f (monotone_lfp hmono), 
-   from take n, 
-   begin 
-   apply hmono,
-   apply le_dSup,
-   exact ⟨_, rfl⟩ 
-   end, 
-begin
-      
-end
+lemma le_lfp {f : α → α} (hmono : monotone f) : 
+    hmono.ascending_chain.is_stationary → 
+    f hmono.lfp ≤  hmono.lfp :=
+ begin
+  intro hst,
+  rw -ascending_chain_dSup at hst,
+  apply le_dSup,
+  cases hst with n hn,
+  assert H : hmono.lfp = iter_n f ⊥ n, apply hn,
+  rw H,
+  exact ⟨n+1, rfl⟩  
+ end
+
+lemma lfp_eq {f : α → α} (hmono : monotone f) : hmono.ascending_chain.is_stationary → hmono.lfp = f hmono.lfp 
+:= assume hst, le_antisymm (lfp_le hmono) (le_lfp hmono hst)
+
+end monotone
+
 def fixed_point (f : α → α) : set α := { x | x = f x }
 
-def lfp (f : scott_continuous α α) : α := 
-  dSup ⟨_, is_directed.of_ascending_chain (iter_n.to_ascending_chain f.monotone bot_le)⟩   
+namespace scott_continuous
+variables [directed_complete_partial_order α] 
 
+def lfp (f : scott_continuous α α) : α := f.monotone.lfp
 
 variable {f : scott_continuous α α}
 
-lemma lfp_eq : lfp f = f.1 (lfp f) := 
-  le_antisymm 
-    begin
-      unfold lfp,
-      rw f.2.preserve_dSup,
-      apply dSup_le,
-      intros a ha,
-      cases ha with n hn,
-      rw hn,
-      apply le_dSup_of_le,
-      exact ⟨iter_n f.1 ⊥ n, ⟨_, rfl⟩ , rfl⟩,
-      change iter_n f.1 ⊥ n ≤ iter_n f.1 ⊥ (n+1),
-      apply iter_n.increasing_singlestep f.monotone bot_le,
-    end
+lemma lfp_le : f.lfp ≤ f.1 f.lfp := 
     begin
     unfold lfp,
+    unfold monotone.lfp,
     rw f.2.preserve_dSup,
     apply dSup_le,
     intros a ha,
-    cases ha with a₁ ha₁,
-    cases ha₁ with ha₁ eqa₁,
-    cases ha₁ with n hn,
-    rw -eqa₁,
+    cases ha with n hn,
     rw hn,
+    cases n with n, 
+    apply bot_le,
     apply le_dSup,
-    exact ⟨n+1, rfl⟩ 
-    end   
+    exact ⟨_, ⟨n, rfl⟩, rfl⟩ 
+    end
+
+lemma le_lfp : f.1 f.lfp ≤ f.lfp := 
+   begin 
+   unfold lfp, unfold monotone.lfp,
+   rw f.2.preserve_dSup,   
+   apply dSup_le_dSup,
+   intros a ha,
+   cases ha with a₁ ha₁,
+   rw -ha₁.right,
+   cases ha₁.left with n hn,
+   rw hn,
+   exact ⟨n+1, rfl⟩    
+   end
+
+lemma lfp_eq : f.lfp = f.1 f.lfp := le_antisymm lfp_le le_lfp 
 
 lemma lfp_fixed_point : lfp f ∈ fixed_point f.1 := lfp_eq 
 
-lemma lfp_le : ∀ x ∈ fixed_point f.1, lfp f ≤ x := 
+lemma lfp_least : ∀ x ∈ fixed_point f.1, lfp f ≤ x := 
   take x, assume xeq, dSup_le 
      (take a, assume ⟨n, hn⟩, eq.rec_on hn.symm 
         (nat.rec_on n bot_le (λ n iH, eq.rec_on xeq.symm (f.monotone iH)) )) 
-end
+end scott_continuous
 
 
